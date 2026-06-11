@@ -30,7 +30,8 @@
     flex: 0 0 auto;
     display: flex;
     justify-content: center;
-    padding: 8px 0 0;
+    padding: 8px 0 6px;
+    background: var(--bg);   /* solid strip — hides the pattern behind the logo */
   }
   #logo img { height: 56px; width: auto; display: block; }
 
@@ -550,9 +551,4 @@
   });
 
   function debounce(fn, ms) {
-    var t; return function () { clearTimeout(t); t = setTimeout(fn, ms); };
-  }
-})();
-</script>
-</body>
-</html>
+    var t; return functio
