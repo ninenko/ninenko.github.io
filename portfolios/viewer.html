@@ -74,6 +74,7 @@
     letter-spacing: .04em;
   }
   #counter { font-variant-numeric: tabular-nums; min-width: 72px; text-align: center; }
+  #prog { font-size: 11px; color: var(--chrome-dim); font-variant-numeric: tabular-nums; }
   .bar-btn {
     background: transparent;
     border: 1px solid rgba(0,0,0,.35);
@@ -166,6 +167,7 @@
 
 <div id="bar">
   <span id="counter">&#8211; / &#8211;</span>
+  <span id="prog"></span>
   <a class="bar-btn" id="downloadBtn" href="#" download>&#8595; PDF</a>
   <button class="bar-btn" id="fsBtn">&#x26F6; Fullscreen</button>
 </div>
@@ -184,7 +186,9 @@
     else { pdfUrl = resolved.href; }
   } catch (e) { pdfUrl = 'sample.pdf'; }
 
-  var RENDER_SCALE_MAX = 1920;
+  // Cap per-page render width. ~1200px is plenty for a flipbook page and keeps
+  // both CPU time and JPEG payload low. (Was 1920 — a major slowness factor.)
+  var RENDER_SCALE_MAX = 1200;
   var $ = function (id) { return document.getElementById(id); };
 
   $('downloadBtn').href = pdfUrl;
@@ -207,7 +211,10 @@
   var pageFlip = null;
   var totalPages = 0;
   var pageRatio = 16 / 9;
-  var allImages = null;
+  var pageSrcs = [];        // image URLs, filled progressively as pages render
+  var pageImgs = [];        // live <img> elements in the current book
+  var renderedCount = 0;
+  var renderQueue = [];     // page numbers still to render (reprioritized on flip)
 
   var TWO_PAGE_MIN = 768;
   function isTwoPage() { return window.innerWidth >= TWO_PAGE_MIN; }
@@ -226,8 +233,26 @@
     return { width: isTwoPage() ? Math.floor(s.width / 2) : s.width, height: s.height };
   }
 
+  // When the user flips, move the pages around the new position to the front
+  // of the render queue so what they're looking at fills in first.
+  function prioritizePages(idx0) {
+    var want = [idx0 + 4, idx0 + 3, idx0 + 2, idx0 + 1, idx0];
+    for (var k = 0; k < want.length; k++) {
+      var pn = want[k] + 1; // queue holds 1-based page numbers
+      var pos = renderQueue.indexOf(pn);
+      if (pos > -1) { renderQueue.splice(pos, 1); renderQueue.unshift(pn); }
+    }
+  }
+
+  function updateProgress() {
+    $('loaderFill').style.width = Math.round(renderedCount / totalPages * 100) + '%';
+    $('prog').textContent = renderedCount >= totalPages
+      ? '' : 'preparing ' + renderedCount + ' / ' + totalPages;
+  }
+
   pdfjsLib.getDocument({ url: pdfUrl }).promise.then(function (pdf) {
     totalPages = pdf.numPages;
+    pageSrcs = new Array(totalPages);
     return pdf.getPage(1).then(function (p1) {
       var vp = p1.getViewport({ scale: 1 });
       pageRatio = vp.width / vp.height;
@@ -235,8 +260,19 @@
         Math.ceil(bookSize().width * (window.devicePixelRatio || 1) * 1.25));
       var scale = renderW / vp.width;
 
-      var images = new Array(totalPages);
-      var done = 0;
+      // Async JPEG encode (toBlob) instead of synchronous toDataURL —
+      // keeps the main thread free and avoids huge base64 strings in memory.
+      function canvasToUrl(c) {
+        return new Promise(function (resolve) {
+          if (c.toBlob) {
+            c.toBlob(function (b) {
+              resolve(b ? URL.createObjectURL(b) : c.toDataURL('image/jpeg', 0.85));
+            }, 'image/jpeg', 0.85);
+          } else {
+            resolve(c.toDataURL('image/jpeg', 0.85));
+          }
+        });
+      }
 
       function renderPage(n) {
         return pdf.getPage(n).then(function (page) {
@@ -244,36 +280,54 @@
           var c = document.createElement('canvas');
           c.width = Math.floor(v.width);
           c.height = Math.floor(v.height);
-          return page.render({ canvasContext: c.getContext('2d'), viewport: v })
-            .promise.then(function () {
-              images[n - 1] = c.toDataURL('image/jpeg', 0.85);
-              done++;
-              $('loaderFill').style.width = Math.round(done / totalPages * 100) + '%';
-              $('loaderLabel').textContent = 'Loading ' + done + ' / ' + totalPages;
+          return page.render({ canvasContext: c.getContext('2d'), viewport: v }).promise
+            .then(function () { return canvasToUrl(c); })
+            .then(function (url) {
+              pageSrcs[n - 1] = url;
+              if (pageImgs[n - 1]) { pageImgs[n - 1].src = url; }
+              renderedCount++;
+              updateProgress();
             });
         });
       }
 
-      var chain = Promise.resolve();
-      for (var i = 1; i <= totalPages; i++) {
-        (function (n) { chain = chain.then(function () { return renderPage(n); }); })(i);
+      // Background render loop: one page at a time, yielding to the event
+      // loop between pages so the tab never freezes.
+      var pumping = false;
+      function pump() {
+        if (pumping) return;
+        var n = renderQueue.shift();
+        if (n === undefined) return;
+        pumping = true;
+        renderPage(n)
+          .catch(function (e) { console.error('Page ' + n + ' failed to render', e); })
+          .then(function () {
+            pumping = false;
+            setTimeout(pump, 16);
+          });
       }
-      return chain.then(function () { return images; });
-    });
-  }).then(function (images) {
-    allImages = images;
-    buildBook();
-    $('loader').classList.add('hidden');
 
-    var wasTwo = isTwoPage();
-    window.addEventListener('resize', debounce(function () {
-      if (isTwoPage() !== wasTwo) {
-        wasTwo = isTwoPage();
+      // Render page 1, show the book immediately, fill in the rest behind.
+      return renderPage(1).then(function () {
         buildBook();
-      } else {
-        applyWrapSize();
-      }
-    }, 150));
+        $('loader').classList.add('hidden');
+        updateCounter(1);
+
+        renderQueue = [];
+        for (var i = 2; i <= totalPages; i++) renderQueue.push(i);
+        setTimeout(pump, 16);
+
+        var wasTwo = isTwoPage();
+        window.addEventListener('resize', debounce(function () {
+          if (isTwoPage() !== wasTwo) {
+            wasTwo = isTwoPage();
+            buildBook();
+          } else {
+            applyWrapSize();
+          }
+        }, 150));
+      });
+    });
   }).catch(function (err) {
     console.error(err);
     showFallback();
@@ -286,14 +340,35 @@
     wrap.style.height = s.height + 'px';
   }
 
+  // Build .page > img placeholder elements for every page; src is set as
+  // soon as that page's render finishes (blank white page until then).
+  function makePageEls() {
+    var book = $('book');
+    book.innerHTML = '';
+    pageImgs = [];
+    var els = [];
+    for (var i = 0; i < totalPages; i++) {
+      var d = document.createElement('div');
+      d.className = 'page';
+      var img = document.createElement('img');
+      img.alt = 'Page ' + (i + 1);
+      if (pageSrcs[i]) { img.src = pageSrcs[i]; }
+      d.appendChild(img);
+      book.appendChild(d);
+      pageImgs.push(img);
+      els.push(d);
+    }
+    return els;
+  }
+
   function buildBook() {
-    if (!allImages) return;
+    if (!totalPages) return;
     var current = pageFlip ? pageFlip.getCurrentPageIndex() : 0;
     if (pageFlip) {
       try { pageFlip.destroy(); } catch (e) {}
-      $('book').innerHTML = '';
     }
     applyWrapSize();
+    var els = makePageEls();
     var size = bookSize();
     pageFlip = new St.PageFlip($('book'), {
       width: size.width,
@@ -310,8 +385,11 @@
       mobileScrollSupport: true,
       swipeDistance: 20
     });
-    pageFlip.loadFromImages(allImages);
-    pageFlip.on('flip', function (e) { updateCounter(e.data + 1); });
+    pageFlip.loadFromHTML(els);
+    pageFlip.on('flip', function (e) {
+      updateCounter(e.data + 1);
+      prioritizePages(e.data);
+    });
     if (current) { try { pageFlip.turnToPage(current); } catch (e) {} }
     updateCounter((pageFlip.getCurrentPageIndex() || 0) + 1);
   }
