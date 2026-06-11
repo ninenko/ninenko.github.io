@@ -45,7 +45,6 @@
   }
   .page img { width: 100%; height: 100%; object-fit: contain; }
 
-  /* side arrows */
   .nav-arrow {
     position: absolute;
     top: 50%;
@@ -64,7 +63,6 @@
   #prev { left: 6px; }
   #next { right: 6px; }
 
-  /* bottom bar */
   #bar {
     flex: 0 0 auto;
     display: flex;
@@ -92,7 +90,6 @@
   }
   .bar-btn:hover { border-color: var(--green-dark); color: var(--green-dark); }
 
-  /* loading */
   #loader {
     position: absolute;
     inset: 0;
@@ -119,7 +116,6 @@
   }
   #loader .label { font-size: 12px; color: var(--chrome-dim); letter-spacing: .08em; text-transform: uppercase; }
 
-  /* fallback */
   #fallback {
     position: absolute;
     inset: 0;
@@ -147,7 +143,7 @@
 
   @media (max-width: 640px) {
     #stage { padding: 8px 4px; }
-    .nav-arrow { display: none; } /* swipe instead */
+    .nav-arrow { display: none; }
     #bar { gap: 12px; font-size: 12px; }
   }
 </style>
@@ -169,7 +165,7 @@
 </div>
 
 <div id="bar">
-  <span id="counter">– / –</span>
+  <span id="counter">&#8211; / &#8211;</span>
   <a class="bar-btn" id="downloadBtn" href="#" download>&#8595; PDF</a>
   <button class="bar-btn" id="fsBtn">&#x26F6; Fullscreen</button>
 </div>
@@ -180,17 +176,15 @@
 (function () {
   'use strict';
 
-  // ---- config ----------------------------------------------------------
   var params = new URLSearchParams(location.search);
   var pdfUrl = params.get('pdf') || 'sample.pdf';
-  // allow only same-origin / relative paths to keep the embed safe
   try {
     var resolved = new URL(pdfUrl, location.href);
     if (resolved.origin !== location.origin) { pdfUrl = 'sample.pdf'; }
     else { pdfUrl = resolved.href; }
   } catch (e) { pdfUrl = 'sample.pdf'; }
 
-  var RENDER_SCALE_MAX = 1920;   // max pixel width of a rendered page
+  var RENDER_SCALE_MAX = 1920;
   var $ = function (id) { return document.getElementById(id); };
 
   $('downloadBtn').href = pdfUrl;
@@ -212,19 +206,26 @@
 
   var pageFlip = null;
   var totalPages = 0;
-  var pageRatio = 16 / 9; // width / height, updated from the PDF
+  var pageRatio = 16 / 9;
+  var allImages = null;
 
-  // ---- sizing ----------------------------------------------------------
-  function bookSize() {
+  var TWO_PAGE_MIN = 768;
+  function isTwoPage() { return window.innerWidth >= TWO_PAGE_MIN; }
+
+  function spreadSize() {
     var stage = $('stage');
     var availW = stage.clientWidth - (window.innerWidth > 640 ? 112 : 8);
     var availH = stage.clientHeight - 16;
-    var w = availW, h = w / pageRatio;
-    if (h > availH) { h = availH; w = h * pageRatio; }
+    var ratio = isTwoPage() ? pageRatio * 2 : pageRatio;
+    var w = availW, h = w / ratio;
+    if (h > availH) { h = availH; w = h * ratio; }
     return { width: Math.max(200, Math.floor(w)), height: Math.max(120, Math.floor(h)) };
   }
+  function bookSize() {
+    var s = spreadSize();
+    return { width: isTwoPage() ? Math.floor(s.width / 2) : s.width, height: s.height };
+  }
 
-  // ---- load & render ---------------------------------------------------
   pdfjsLib.getDocument({ url: pdfUrl }).promise.then(function (pdf) {
     totalPages = pdf.numPages;
     return pdf.getPage(1).then(function (p1) {
@@ -253,7 +254,6 @@
         });
       }
 
-      // render sequentially in small batches to keep memory sane
       var chain = Promise.resolve();
       for (var i = 1; i <= totalPages; i++) {
         (function (n) { chain = chain.then(function () { return renderPage(n); }); })(i);
@@ -261,14 +261,40 @@
       return chain.then(function () { return images; });
     });
   }).then(function (images) {
-    var size = bookSize();
+    allImages = images;
+    buildBook();
+    $('loader').classList.add('hidden');
+
+    var wasTwo = isTwoPage();
+    window.addEventListener('resize', debounce(function () {
+      if (isTwoPage() !== wasTwo) {
+        wasTwo = isTwoPage();
+        buildBook();
+      } else {
+        applyWrapSize();
+      }
+    }, 150));
+  }).catch(function (err) {
+    console.error(err);
+    showFallback();
+  });
+
+  function applyWrapSize() {
+    var s = spreadSize();
     var wrap = $('bookWrap');
-    function applyWrapSize() {
-      var s = bookSize();
-      wrap.style.width = s.width + 'px';
-      wrap.style.height = s.height + 'px';
+    wrap.style.width = s.width + 'px';
+    wrap.style.height = s.height + 'px';
+  }
+
+  function buildBook() {
+    if (!allImages) return;
+    var current = pageFlip ? pageFlip.getCurrentPageIndex() : 0;
+    if (pageFlip) {
+      try { pageFlip.destroy(); } catch (e) {}
+      $('book').innerHTML = '';
     }
     applyWrapSize();
+    var size = bookSize();
     pageFlip = new St.PageFlip($('book'), {
       width: size.width,
       height: size.height,
@@ -277,26 +303,19 @@
       maxWidth: 2400,
       minHeight: 120,
       maxHeight: 1600,
-      usePortrait: true,        // single-page mode
+      usePortrait: !isTwoPage(),
       showCover: true,
       maxShadowOpacity: 0.4,
       flippingTime: 700,
       mobileScrollSupport: true,
       swipeDistance: 20
     });
-    pageFlip.loadFromImages(images);
-
+    pageFlip.loadFromImages(allImages);
     pageFlip.on('flip', function (e) { updateCounter(e.data + 1); });
-    updateCounter(1);
-    $('loader').classList.add('hidden');
+    if (current) { try { pageFlip.turnToPage(current); } catch (e) {} }
+    updateCounter((pageFlip.getCurrentPageIndex() || 0) + 1);
+  }
 
-    window.addEventListener('resize', debounce(applyWrapSize, 150));
-  }).catch(function (err) {
-    console.error(err);
-    showFallback();
-  });
-
-  // ---- controls --------------------------------------------------------
   function updateCounter(current) {
     $('counter').textContent = current + ' / ' + totalPages;
     $('prev').disabled = current <= 1;
