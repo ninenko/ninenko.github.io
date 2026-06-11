@@ -30,10 +30,14 @@
     flex: 0 0 auto;
     display: flex;
     justify-content: center;
-    padding: 8px 0 6px;
-    background: var(--bg);   /* solid strip — hides the pattern behind the logo */
+    padding: 8px 0 2px;
   }
-  #logo img { height: 56px; width: auto; display: block; }
+  #logo img {
+    height: 64px; width: auto; display: block;
+    padding: 4px 18px;
+    background: var(--bg);                /* white only right behind the logo */
+    box-shadow: 0 0 18px 14px var(--bg);  /* soft fade into the pattern */
+  }
 
   #stage {
     flex: 1;
@@ -79,15 +83,23 @@
 
   #bar {
     flex: 0 0 auto;
+    position: relative;
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: space-between;
     gap: 18px;
     padding: 6px 16px 10px;
     font-size: 13px;
     letter-spacing: .04em;
   }
-  #counter { font-variant-numeric: tabular-nums; min-width: 72px; text-align: center; }
+  .bar-side { display: inline-flex; align-items: center; gap: 18px; }
+  #counter {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+  }
   #prog { font-size: 11px; color: var(--chrome-dim); font-variant-numeric: tabular-nums; }
   .bar-btn {
     background: transparent;
@@ -157,10 +169,11 @@
   }
 
   @media (max-width: 640px) {
-    #logo img { height: 40px; }
+    #logo img { height: 48px; padding: 4px 12px; }
     #stage { padding: 6px 4px; }
     .nav-arrow { display: none; }
     #bar { gap: 12px; font-size: 12px; }
+    .bar-side { gap: 12px; }
   }
 </style>
 </head>
@@ -185,11 +198,15 @@
 </div>
 
 <div id="bar">
-  <button class="bar-btn" id="modeBtn" style="display:none">1 page view</button>
+  <div class="bar-side">
+    <button class="bar-btn" id="modeBtn" style="display:none">1 page view</button>
+  </div>
   <span id="counter">&#8211; / &#8211;</span>
-  <span id="prog"></span>
-  <a class="bar-btn" id="downloadBtn" href="#" download>&#8595; PDF</a>
-  <button class="bar-btn" id="fsBtn">&#x26F6; Fullscreen</button>
+  <div class="bar-side">
+    <span id="prog"></span>
+    <a class="bar-btn" id="downloadBtn" href="#" download>&#8595; PDF</a>
+    <button class="bar-btn" id="fsBtn">&#x26F6; Fullscreen</button>
+  </div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
