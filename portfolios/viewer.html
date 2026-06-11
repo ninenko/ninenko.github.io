@@ -45,6 +45,11 @@
   }
   .page img { width: 100%; height: 100%; object-fit: contain; }
 
+  /* Mobile single-page pager (used below 768px instead of StPageFlip) */
+  #track { display: flex; height: 100%; will-change: transform; }
+  .pp { flex: 0 0 100%; height: 100%; }
+  .pp .page { width: 100%; height: 100%; }
+
   .nav-arrow {
     position: absolute;
     top: 50%;
@@ -200,7 +205,7 @@
     $('loader').classList.add('hidden');
   }
 
-  if (!window.pdfjsLib || !window.St) {
+  if (!window.pdfjsLib) {
     showFallback('The viewer libraries could not be loaded.');
     return;
   }
@@ -218,19 +223,23 @@
 
   var TWO_PAGE_MIN = 768;
   function isTwoPage() { return window.innerWidth >= TWO_PAGE_MIN; }
+  // Flip book only on wide screens; phones get the single-page swipe pager.
+  function useFlip() { return isTwoPage() && !!window.St; }
+  var curIdx = 0;          // current page index (0-based), shared by both modes
+  var pagerTrack = null;   // mobile pager track element (null in flip mode)
 
   function spreadSize() {
     var stage = $('stage');
     var availW = stage.clientWidth - (window.innerWidth > 640 ? 112 : 8);
     var availH = stage.clientHeight - 16;
-    var ratio = isTwoPage() ? pageRatio * 2 : pageRatio;
+    var ratio = useFlip() ? pageRatio * 2 : pageRatio;
     var w = availW, h = w / ratio;
     if (h > availH) { h = availH; w = h * ratio; }
     return { width: Math.max(200, Math.floor(w)), height: Math.max(120, Math.floor(h)) };
   }
   function bookSize() {
     var s = spreadSize();
-    return { width: isTwoPage() ? Math.floor(s.width / 2) : s.width, height: s.height };
+    return { width: useFlip() ? Math.floor(s.width / 2) : s.width, height: s.height };
   }
 
   // When the user flips, move the pages around the new position to the front
@@ -309,7 +318,7 @@
 
       // Render page 1, show the book immediately, fill in the rest behind.
       return renderPage(1).then(function () {
-        buildBook();
+        buildViewer();
         $('loader').classList.add('hidden');
         updateCounter(1);
 
@@ -317,11 +326,11 @@
         for (var i = 2; i <= totalPages; i++) renderQueue.push(i);
         setTimeout(pump, 16);
 
-        var wasTwo = isTwoPage();
+        var wasFlip = useFlip();
         window.addEventListener('resize', debounce(function () {
-          if (isTwoPage() !== wasTwo) {
-            wasTwo = isTwoPage();
-            buildBook();
+          if (useFlip() !== wasFlip) {
+            wasFlip = useFlip();
+            buildViewer();
           } else {
             applyWrapSize();
           }
@@ -361,12 +370,17 @@
     return els;
   }
 
-  function buildBook() {
+  function buildViewer() {
     if (!totalPages) return;
-    var current = pageFlip ? pageFlip.getCurrentPageIndex() : 0;
-    if (pageFlip) {
-      try { pageFlip.destroy(); } catch (e) {}
-    }
+    if (pageFlip) { try { pageFlip.destroy(); } catch (e) {} pageFlip = null; }
+    pagerTrack = null;
+    var book = $('book');
+    book.removeAttribute('style');
+    book.innerHTML = '';
+    if (useFlip()) { buildBook(); } else { buildPager(); }
+  }
+
+  function buildBook() {
     applyWrapSize();
     var els = makePageEls();
     var size = bookSize();
@@ -378,7 +392,7 @@
       maxWidth: 2400,
       minHeight: 120,
       maxHeight: 1600,
-      usePortrait: !isTwoPage(),
+      usePortrait: false,
       showCover: true,
       maxShadowOpacity: 0.4,
       flippingTime: 700,
@@ -387,24 +401,105 @@
     });
     pageFlip.loadFromHTML(els);
     pageFlip.on('flip', function (e) {
+      curIdx = e.data;
       updateCounter(e.data + 1);
       prioritizePages(e.data);
     });
-    if (current) { try { pageFlip.turnToPage(current); } catch (e) {} }
+    if (curIdx) { try { pageFlip.turnToPage(curIdx); } catch (e) {} }
     updateCounter((pageFlip.getCurrentPageIndex() || 0) + 1);
   }
+
+  // Mobile: one full-width page, swipe (or tap edges) to turn. StPageFlip is
+  // not used here — its portrait mode renders pages half-size and offset.
+  function buildPager() {
+    applyWrapSize();
+    var book = $('book');
+    book.style.width = '100%';
+    book.style.height = '100%';
+    book.style.overflow = 'hidden';
+    pageImgs = [];
+    pagerTrack = document.createElement('div');
+    pagerTrack.id = 'track';
+    for (var i = 0; i < totalPages; i++) {
+      var slot = document.createElement('div');
+      slot.className = 'pp';
+      var d = document.createElement('div');
+      d.className = 'page';
+      var img = document.createElement('img');
+      img.alt = 'Page ' + (i + 1);
+      if (pageSrcs[i]) { img.src = pageSrcs[i]; }
+      d.appendChild(img);
+      slot.appendChild(d);
+      pagerTrack.appendChild(slot);
+      pageImgs.push(img);
+    }
+    book.appendChild(pagerTrack);
+    pagerGo(curIdx, false);
+  }
+
+  function pagerGo(idx, animate) {
+    if (!pagerTrack) return;
+    idx = Math.max(0, Math.min(totalPages - 1, idx));
+    curIdx = idx;
+    pagerTrack.style.transition = animate === false ? 'none' : 'transform .3s ease';
+    pagerTrack.style.transform = 'translateX(' + (-idx * 100) + '%)';
+    updateCounter(idx + 1);
+    prioritizePages(idx);
+  }
+
+  // Swipe + tap-edge navigation for the pager (attached once; inert in flip mode).
+  (function () {
+    var book = $('book');
+    var sx = 0, sy = 0, dx = 0, dragging = false, horiz = null;
+    book.addEventListener('touchstart', function (e) {
+      if (!pagerTrack || e.touches.length !== 1) return;
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+      dx = 0; dragging = true; horiz = null;
+    }, { passive: true });
+    book.addEventListener('touchmove', function (e) {
+      if (!pagerTrack || !dragging) return;
+      dx = e.touches[0].clientX - sx;
+      var dy = e.touches[0].clientY - sy;
+      if (horiz === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+        horiz = Math.abs(dx) > Math.abs(dy);
+        if (horiz) { pagerTrack.style.transition = 'none'; }
+      }
+      if (!horiz) return;
+      if (e.cancelable) e.preventDefault();
+      var atEdge = (curIdx === 0 && dx > 0) || (curIdx === totalPages - 1 && dx < 0);
+      var off = -curIdx * book.clientWidth + (atEdge ? dx / 3 : dx);
+      pagerTrack.style.transform = 'translateX(' + off + 'px)';
+    }, { passive: false });
+    book.addEventListener('touchend', function () {
+      if (!pagerTrack || !dragging) return;
+      dragging = false;
+      if (horiz && Math.abs(dx) > Math.max(40, book.clientWidth * 0.15)) {
+        pagerGo(curIdx + (dx < 0 ? 1 : -1));
+      } else {
+        pagerGo(curIdx);
+      }
+    });
+    book.addEventListener('click', function (e) {
+      if (!pagerTrack || Math.abs(dx) > 10) return;
+      var r = book.getBoundingClientRect();
+      var x = e.clientX - r.left;
+      if (x > r.width * 0.6) { pagerGo(curIdx + 1); }
+      else if (x < r.width * 0.4) { pagerGo(curIdx - 1); }
+    });
+  })();
 
   function updateCounter(current) {
     $('counter').textContent = current + ' / ' + totalPages;
     $('prev').disabled = current <= 1;
     $('next').disabled = current >= totalPages;
   }
-  $('prev').addEventListener('click', function () { if (pageFlip) pageFlip.flipPrev(); });
-  $('next').addEventListener('click', function () { if (pageFlip) pageFlip.flipNext(); });
+  function navPrev() { if (pageFlip) { pageFlip.flipPrev(); } else { pagerGo(curIdx - 1); } }
+  function navNext() { if (pageFlip) { pageFlip.flipNext(); } else { pagerGo(curIdx + 1); } }
+  $('prev').addEventListener('click', navPrev);
+  $('next').addEventListener('click', navNext);
   document.addEventListener('keydown', function (e) {
-    if (!pageFlip) return;
-    if (e.key === 'ArrowLeft') pageFlip.flipPrev();
-    if (e.key === 'ArrowRight' || e.key === ' ') pageFlip.flipNext();
+    if (e.key === 'ArrowLeft') navPrev();
+    if (e.key === 'ArrowRight' || e.key === ' ') navNext();
   });
   $('fsBtn').addEventListener('click', function () {
     if (document.fullscreenElement) { document.exitFullscreen(); }
