@@ -26,6 +26,14 @@
     -webkit-user-select: none;
   }
 
+  #logo {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: center;
+    padding: 8px 0 0;
+  }
+  #logo img { height: 56px; width: auto; display: block; }
+
   #stage {
     flex: 1;
     display: flex;
@@ -33,7 +41,7 @@
     justify-content: center;
     position: relative;
     min-height: 0;
-    padding: 16px 56px;
+    padding: 8px 56px;
   }
   #book { touch-action: pan-y; }
   #book canvas, #book img { display: block; }
@@ -74,7 +82,7 @@
     align-items: center;
     justify-content: center;
     gap: 18px;
-    padding: 10px 16px 14px;
+    padding: 6px 16px 10px;
     font-size: 13px;
     letter-spacing: .04em;
   }
@@ -148,13 +156,18 @@
   }
 
   @media (max-width: 640px) {
-    #stage { padding: 8px 4px; }
+    #logo img { height: 40px; }
+    #stage { padding: 6px 4px; }
     .nav-arrow { display: none; }
     #bar { gap: 12px; font-size: 12px; }
   }
 </style>
 </head>
 <body>
+
+<a id="logo" href="https://teachforkyrgyzstan.org/" target="_blank" rel="noopener" aria-label="Teach for Kyrgyzstan">
+  <img src="tfk-logo.png" alt="Teach for Kyrgyzstan — Заманбап Мугалим">
+</a>
 
 <div id="stage">
   <div id="loader">
@@ -171,6 +184,7 @@
 </div>
 
 <div id="bar">
+  <button class="bar-btn" id="modeBtn" style="display:none">1 page view</button>
   <span id="counter">&#8211; / &#8211;</span>
   <span id="prog"></span>
   <a class="bar-btn" id="downloadBtn" href="#" download>&#8595; PDF</a>
@@ -222,9 +236,10 @@
   var renderQueue = [];     // page numbers still to render (reprioritized on flip)
 
   var TWO_PAGE_MIN = 768;
+  var singleMode = false;  // user-forced single-page view (modeBtn)
   function isTwoPage() { return window.innerWidth >= TWO_PAGE_MIN; }
   // Flip book only on wide screens; phones get the single-page swipe pager.
-  function useFlip() { return isTwoPage() && !!window.St; }
+  function useFlip() { return !singleMode && isTwoPage() && !!window.St; }
   var curIdx = 0;          // current page index (0-based), shared by both modes
   var pagerTrack = null;   // mobile pager track element (null in flip mode)
 
@@ -333,6 +348,7 @@
             buildViewer();
           } else {
             applyWrapSize();
+            updateModeBtn();
           }
         }, 150));
       });
@@ -374,10 +390,24 @@
     if (!totalPages) return;
     if (pageFlip) { try { pageFlip.destroy(); } catch (e) {} pageFlip = null; }
     pagerTrack = null;
+    // StPageFlip's destroy() removes #book from the DOM — recreate it if gone,
+    // otherwise rebuilding after an orientation change leaves a blank stage.
     var book = $('book');
+    if (!book) {
+      book = document.createElement('div');
+      book.id = 'book';
+      $('bookWrap').appendChild(book);
+    }
     book.removeAttribute('style');
     book.innerHTML = '';
     if (useFlip()) { buildBook(); } else { buildPager(); }
+    updateModeBtn();
+  }
+
+  function updateModeBtn() {
+    var b = $('modeBtn');
+    b.style.display = (isTwoPage() && window.St) ? '' : 'none';
+    b.textContent = singleMode ? '2 page view' : '1 page view';
   }
 
   function buildBook() {
@@ -448,8 +478,9 @@
   }
 
   // Swipe + tap-edge navigation for the pager (attached once; inert in flip mode).
+  // Bound to #bookWrap, which is never destroyed (#book can be recreated).
   (function () {
-    var book = $('book');
+    var book = $('bookWrap');
     var sx = 0, sy = 0, dx = 0, dragging = false, horiz = null;
     book.addEventListener('touchstart', function (e) {
       if (!pagerTrack || e.touches.length !== 1) return;
@@ -500,6 +531,15 @@
   document.addEventListener('keydown', function (e) {
     if (e.key === 'ArrowLeft') navPrev();
     if (e.key === 'ArrowRight' || e.key === ' ') navNext();
+  });
+  $('modeBtn').addEventListener('click', function () {
+    singleMode = !singleMode;
+    buildViewer();
+  });
+  // iOS often reports stale dimensions right after rotation — re-fire resize
+  // once the new size has settled so the viewer rebuilds correctly.
+  window.addEventListener('orientationchange', function () {
+    setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 300);
   });
   $('fsBtn').addEventListener('click', function () {
     if (document.fullscreenElement) { document.exitFullscreen(); }
