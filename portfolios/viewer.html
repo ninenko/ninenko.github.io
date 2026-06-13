@@ -546,10 +546,22 @@
   function navNext() { if (pageFlip) { pageFlip.flipNext(); } else { pagerGo(curIdx + 1); } }
   $('prev').addEventListener('click', navPrev);
   $('next').addEventListener('click', navNext);
+  // Presentation clickers send a small set of keys — most commonly PageUp /
+  // PageDown, but also arrows, Enter, Backspace and Space depending on brand.
+  // Handle all of them so any remote can flip pages.
+  var PREV_KEYS = { ArrowLeft: 1, ArrowUp: 1, PageUp: 1, Backspace: 1 };
+  var NEXT_KEYS = { ArrowRight: 1, ArrowDown: 1, PageDown: 1, Enter: 1, ' ': 1, Spacebar: 1 };
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'ArrowLeft') navPrev();
-    if (e.key === 'ArrowRight' || e.key === ' ') navNext();
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (PREV_KEYS[e.key]) { e.preventDefault(); navPrev(); }
+    else if (NEXT_KEYS[e.key]) { e.preventDefault(); navNext(); }
   });
+  // Keyboard events only reach this document when it actually has focus. Inside
+  // a Tilda iframe that isn't guaranteed, so grab focus on tap and whenever we
+  // enter fullscreen — otherwise the clicker's keys go to the parent page.
+  function grabFocus() { try { window.focus(); } catch (e) {} }
+  $('stage').setAttribute('tabindex', '-1');
+  $('stage').addEventListener('pointerdown', grabFocus);
   $('modeBtn').addEventListener('click', function () {
     singleMode = !singleMode;
     buildViewer();
@@ -564,6 +576,7 @@
     else { document.documentElement.requestFullscreen().catch(function(){}); }
   });
   document.addEventListener('fullscreenchange', function () {
+    grabFocus();
     setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 100);
   });
 
