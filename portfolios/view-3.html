@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Presentation viewer</title>
+<style>
+  :root {
+    --bg: #ffffff;            /* TfK white */
+    --chrome: #000000;        /* TfK black */
+    --chrome-dim: rgba(0,0,0,.45);
+    --accent: #FFC607;        /* TfK yellow */
+    --green-dark: #73875D;    /* TfK green-dark (hover) */
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg) url("data:image/svg+xml,%3Csvg%20xmlns=%22http://www.w3.org/2000/svg%22%20width=%2296%22%20height=%2296%22%20viewBox=%220%200%20159.3%20159.3%22%3E%3Cg%20transform=%22translate%2879.65,79.65%29%20rotate%2845%29%20translate%28-207.32,-493.70%29%22%3E%3Cpath%20fill=%22%23000000%22%20fill-opacity=%220.09%22%20d=%22M235.22,462.41%20L235.22,446.81%20C234.89,447.14%20234.62,447.47%20234.29,447.74%20C228.76,453.27%20221.62,457.07%20213.62,458.41%20L213.62,449.47%20L213.62,449.27%20L213.96,449.21%20C215.16,448.87%20216.36,448.54%20217.56,448.07%20C222.56,446.27%20226.42,443.27%20229.55,439.54%20C233.89,434.41%20236.22,428.14%20236.42,421.81%20L236.42,420.67%20C236.42,420.21%20236.22,419.54%20236.09,419.01%20C235.22,416.61%20232.95,414.81%20230.22,414.81%20C226.82,414.81%20224.09,417.54%20224.09,420.94%20C224.09,421.54%20224.09,422.01%20224.02,422.61%20C223.36,428.67%20219.36,433.81%20213.96,436.14%20L213.62,436.27%20L213.62,420.74%20L213.62,420.67%20C213.82,417.21%20210.89,414.27%20207.42,414.27%20C203.89,414.27%20200.96,417.21%20201.16,420.74%20L201.16,436.34%20C195.49,434.07%20191.29,428.81%20190.62,422.61%20C190.56,422.07%20190.56,421.54%20190.56,421.01%20C190.56,417.61%20187.82,414.81%20184.42,414.81%20C181.69,414.81%20179.42,416.61%20178.62,419.01%20C178.42,419.54%20178.22,420.21%20178.22,420.67%20L178.22,421.81%20C178.49,428.87%20181.29,435.87%20186.76,441.34%20C190.82,445.47%20195.89,448.14%20201.16,449.27%20L201.16,449.47%20L201.16,458.47%20C193.09,457.14%20185.89,453.27%20180.36,447.74%20C180.02,447.47%20179.76,447.14%20179.42,446.81%20L179.42,462.41%20C185.76,466.67%20193.16,469.54%20201.16,470.47%20L201.16,480.07%20C193.36,479.27%20186.02,476.94%20179.42,473.41%20L179.42,486.67%20C186.22,489.54%20193.49,491.41%20201.16,492.01%20L201.16,501.54%20C193.56,501.01%20186.29,499.34%20179.42,496.87%20L179.42,509.47%20C186.36,511.61%20193.62,513.01%20201.16,513.47%20L201.16,573.14%20L213.62,573.14%20L213.62,513.47%20C221.09,513.01%20228.36,511.61%20235.22,509.47%20L235.22,496.87%20C228.42,499.34%20221.16,500.94%20213.62,501.54%20L213.62,492.01%20C221.22,491.34%20228.49,489.47%20235.22,486.67%20L235.22,473.41%20C228.62,476.94%20221.36,479.21%20213.62,480.01%20L213.62,470.47%20C221.56,469.47%20228.89,466.67%20235.22,462.41%20Z%22/%3E%3C/g%3E%3C/svg%3E") repeat;
+    background-size: 96px 96px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: var(--chrome);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  #logo {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: center;
+    padding: 8px 0 2px;
+  }
+  #logo img {
+    height: 64px; width: auto; display: block;
+    padding: 4px 18px;
+    background: var(--bg);                /* white only right behind the logo */
+    box-shadow: 0 0 18px 14px var(--bg);  /* soft fade into the pattern */
+  }
+
+  #stage {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    min-height: 0;
+    padding: 8px 56px;
+  }
+  #book { touch-action: pan-y; }
+  #book canvas, #book img { display: block; }
+  .page {
+    background: #fff;
+    border: 1px solid rgba(0,0,0,.12);
+    box-shadow: 0 2px 14px rgba(0,0,0,.10);
+    overflow: hidden;
+  }
+  .page img { width: 100%; height: 100%; object-fit: contain; }
+
+  /* Fallback single-page pager (used only if the StPageFlip CDN fails) */
+  #track { display: flex; height: 100%; will-change: transform; }
+  .pp { flex: 0 0 100%; height: 100%; }
+  .pp .page { width: 100%; height: 100%; }
+
+  .nav-arrow {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 44px; height: 64px;
+    background: transparent;
+    border: none;
+    color: var(--chrome-dim);
+    font-size: 30px;
+    cursor: pointer;
+    transition: color .15s;
+    z-index: 5;
+  }
+  .nav-arrow:hover { color: var(--chrome); }
+  .nav-arrow:disabled { opacity: .25; cursor: default; }
+  #prev { left: 6px; }
+  #next { right: 6px; }
+
+  #bar {
+    flex: 0 0 auto;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 6px 16px 10px;
+    font-size: 13px;
+    letter-spacing: .04em;
+  }
+  .bar-side { display: inline-flex; align-items: center; gap: 18px; }
+  #counter {
+    position: absolute;
+    left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    font-variant-numeric: tabular-nums;
+    text-align: center;
+  }
+  #prog { font-size: 11px; color: var(--chrome-dim); font-variant-numeric: tabular-nums; }
+  .bar-btn {
+    background: transparent;
+    border: 1px solid rgba(0,0,0,.35);
+    border-radius: 0;
+    color: var(--chrome);
+    font-size: 12px;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: border-color .15s, color .15s;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .bar-btn:hover { border-color: var(--green-dark); color: var(--green-dark); }
+
+  #loader {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: transparent;
+    z-index: 10;
+    transition: opacity .4s;
+  }
+  #loader.hidden { opacity: 0; pointer-events: none; }
+  #loader .track {
+    width: 220px; height: 3px;
+    background: rgba(0,0,0,.12);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  #loader .fill {
+    height: 100%; width: 0%;
+    background: var(--accent);
+    transition: width .2s;
+  }
+  #loader .label { font-size: 12px; color: var(--chrome-dim); letter-spacing: .08em; text-transform: uppercase; }
+
+  #fallback {
+    position: absolute;
+    inset: 0;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    background: rgba(255,255,255,.96);
+    z-index: 11;
+    text-align: center;
+    padding: 24px;
+  }
+  #fallback p { font-size: 14px; color: var(--chrome-dim); max-width: 360px; line-height: 1.5; }
+  #fallback a {
+    color: #000;
+    background: var(--accent);
+    border: none;
+    border-radius: 0;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+
+  @media (max-width: 640px) {
+    #logo img { height: 48px; padding: 4px 12px; }
+    #stage { padding: 6px 4px; }
+    .nav-arrow { display: none; }
+    #bar { gap: 12px; font-size: 12px; }
+    .bar-side { gap: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<a id="logo" href="https://teachforkyrgyzstan.org/" target="_blank" rel="noopener" aria-label="Teach for Kyrgyzstan">
+  <img src="tfk-logo.png" alt="Teach for Kyrgyzstan — Заманбап Мугалим">
+</a>
+
+<div id="stage">
+  <div id="loader">
+    <div class="track"><div class="fill" id="loaderFill"></div></div>
+    <div class="label" id="loaderLabel">Loading</div>
+  </div>
+  <div id="fallback">
+    <p id="fallbackMsg">This presentation can't be displayed in your browser, but you can download it below.</p>
+    <a id="fallbackLink" href="#" download>Download PDF</a>
+  </div>
+  <button class="nav-arrow" id="prev" aria-label="Previous page">&#10094;</button>
+  <div id="bookWrap"><div id="book"></div></div>
+  <button class="nav-arrow" id="next" aria-label="Next page">&#10095;</button>
+</div>
+
+<div id="bar">
+  <div class="bar-side"></div>
+  <span id="counter">&#8211; / &#8211;</span>
+  <div class="bar-side">
+    <span id="prog"></span>
+    <button class="bar-btn" id="modeBtn" style="display:none">1 page view</button>
+    <a class="bar-btn" id="downloadBtn" href="#" download>&#8595; PDF</a>
+    <button class="bar-btn" id="fsBtn">&#x26F6; Fullscreen</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var params = new URLSearchParams(location.search);
+  var pdfUrl = params.get('pdf') || 'sample.pdf';
+  try {
+    var resolved = new URL(pdfUrl, location.href);
+    if (resolved.origin !== location.origin) { pdfUrl = 'sample.pdf'; }
+    else { pdfUrl = resolved.href; }
+  } catch (e) { pdfUrl = 'sample.pdf'; }
+
+  // Cap per-page render width. ~1200px is plenty for a flipbook page and keeps
+  // both CPU time and JPEG payload low. (Was 1920 — a major slowness factor.)
+  var RENDER_SCALE_MAX = 1200;
+  var $ = function (id) { return document.getElementById(id); };
+
+  $('downloadBtn').href = pdfUrl;
+  $('fallbackLink').href = pdfUrl;
+
+  function showFallback(msg) {
+    if (msg) $('fallbackMsg').textContent = msg;
+    $('fallback').style.display = 'flex';
+    $('loader').classList.add('hidden');
+  }
+
+  if (!window.pdfjsLib) {
+    showFallback('The viewer libraries could not be loaded.');
+    return;
+  }
+
+  pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+  var pageFlip = null;
+  var totalPages = 0;
+  var pageRatio = 16 / 9;
+  var pageSrcs = [];        // image URLs, filled progressively as pages render
+  var pageImgs = [];        // live <img> elements in the current book
+  var renderedCount = 0;
+  var renderQueue = [];     // page numbers still to render (reprioritized on flip)
+
+  var TWO_PAGE_MIN = 768;
+  var singleMode = true;   // one-page view is the default; modeBtn toggles
+  function isTwoPage() { return window.innerWidth >= TWO_PAGE_MIN; }
+  function twoPageView() { return !singleMode && isTwoPage(); }
+  // StPageFlip is used in BOTH views (portrait mode forced for single page,
+  // so corner-fold + page-roll animations work everywhere). The plain swipe
+  // pager remains only as a fallback when the StPageFlip CDN fails.
+  function useFlip() { return !!window.St; }
+  var curIdx = 0;          // current page index (0-based), shared by both modes
+  var pagerTrack = null;   // fallback pager track element (null in flip mode)
+
+  function spreadSize() {
+    var stage = $('stage');
+    var availW = stage.clientWidth - (window.innerWidth > 640 ? 112 : 8);
+    var availH = stage.clientHeight - 16;
+    var ratio = twoPageView() ? pageRatio * 2 : pageRatio;
+    var w = availW, h = w / ratio;
+    if (h > availH) { h = availH; w = h * ratio; }
+    return { width: Math.max(200, Math.floor(w)), height: Math.max(120, Math.floor(h)) };
+  }
+  function bookSize() {
+    var s = spreadSize();
+    return { width: twoPageView() ? Math.floor(s.width / 2) : s.width, height: s.height };
+  }
+
+  // When the user flips, move the pages around the new position to the front
+  // of the render queue so what they're looking at fills in first.
+  function prioritizePages(idx0) {
+    var want = [idx0 + 4, idx0 + 3, idx0 + 2, idx0 + 1, idx0];
+    for (var k = 0; k < want.length; k++) {
+      var pn = want[k] + 1; // queue holds 1-based page numbers
+      var pos = renderQueue.indexOf(pn);
+      if (pos > -1) { renderQueue.splice(pos, 1); renderQueue.unshift(pn); }
+    }
+  }
+
+  function updateProgress() {
+    $('loaderFill').style.width = Math.round(renderedCount / totalPages * 100) + '%';
+    $('prog').textContent = renderedCount >= totalPages
+      ? '' : 'preparing ' + renderedCount + ' / ' + totalPages;
+  }
+
+  pdfjsLib.getDocument({ url: pdfUrl }).promise.then(function (pdf) {
+    totalPages = pdf.numPages;
+    pageSrcs = new Array(totalPages);
+    return pdf.getPage(1).then(function (p1) {
+      var vp = p1.getViewport({ scale: 1 });
+      pageRatio = vp.width / vp.height;
+      var renderW = Math.min(RENDER_SCALE_MAX,
+        Math.ceil(bookSize().width * (window.devicePixelRatio || 1) * 1.25));
+      var scale = renderW / vp.width;
+
+      // Async JPEG encode (toBlob) instead of synchronous toDataURL —
+      // keeps the main thread free and avoids huge base64 strings in memory.
+      function canvasToUrl(c) {
+        return new Promise(function (resolve) {
+          if (c.toBlob) {
+            c.toBlob(function (b) {
+              resolve(b ? URL.createObjectURL(b) : c.toDataURL('image/jpeg', 0.85));
+            }, 'image/jpeg', 0.85);
+          } else {
+            resolve(c.toDataURL('image/jpeg', 0.85));
+          }
+        });
+      }
+
+      function renderPage(n) {
+        return pdf.getPage(n).then(function (page) {
+          var v = page.getViewport({ scale: scale });
+          var c = document.createElement('canvas');
+          c.width = Math.floor(v.width);
+          c.height = Math.floor(v.height);
+          return page.render({ canvasContext: c.getContext('2d'), viewport: v }).promise
+            .then(function () { return canvasToUrl(c); })
+            .then(function (url) {
+              pageSrcs[n - 1] = url;
+              if (pageImgs[n - 1]) { pageImgs[n - 1].src = url; }
+              renderedCount++;
+              updateProgress();
+            });
+        });
+      }
+
+      // Background render loop: one page at a time, yielding to the event
+      // loop between pages so the tab never freezes.
+      var pumping = false;
+      function pump() {
+        if (pumping) return;
+        var n = renderQueue.shift();
+        if (n === undefined) return;
+        pumping = true;
+        renderPage(n)
+          .catch(function (e) { console.error('Page ' + n + ' failed to render', e); })
+          .then(function () {
+            pumping = false;
+            setTimeout(pump, 16);
+          });
+      }
+
+      // Render page 1, show the book immediately, fill in the rest behind.
+      return renderPage(1).then(function () {
+        buildViewer();
+        $('loader').classList.add('hidden');
+        updateCounter(1);
+
+        renderQueue = [];
+        for (var i = 2; i <= totalPages; i++) renderQueue.push(i);
+        setTimeout(pump, 16);
+
+        // Always rebuild on resize: the forced-portrait minWidth is computed
+        // from the block width at build time, so a stale instance could snap
+        // back to landscape when the window grows.
+        window.addEventListener('resize', debounce(buildViewer, 150));
+      });
+    });
+  }).catch(function (err) {
+    console.error(err);
+    showFallback();
+  });
+
+  function applyWrapSize() {
+    var s = spreadSize();
+    var wrap = $('bookWrap');
+    wrap.style.width = s.width + 'px';
+    wrap.style.height = s.height + 'px';
+  }
+
+  // Build .page > img placeholder elements for every page; src is set as
+  // soon as that page's render finishes (blank white page until then).
+  function makePageEls() {
+    var book = $('book');
+    book.innerHTML = '';
+    pageImgs = [];
+    var els = [];
+    for (var i = 0; i < totalPages; i++) {
+      var d = document.createElement('div');
+      d.className = 'page';
+      var img = document.createElement('img');
+      img.alt = 'Page ' + (i + 1);
+      if (pageSrcs[i]) { img.src = pageSrcs[i]; }
+      d.appendChild(img);
+      book.appendChild(d);
+      pageImgs.push(img);
+      els.push(d);
+    }
+    return els;
+  }
+
+  function buildViewer() {
+    if (!totalPages) return;
+    if (pageFlip) { try { pageFlip.destroy(); } catch (e) {} pageFlip = null; }
+    pagerTrack = null;
+    // StPageFlip's destroy() removes #book from the DOM — recreate it if gone,
+    // otherwise rebuilding after an orientation change leaves a blank stage.
+    var book = $('book');
+    if (!book) {
+      book = document.createElement('div');
+      book.id = 'book';
+      $('bookWrap').appendChild(book);
+    }
+    book.removeAttribute('style');
+    book.innerHTML = '';
+    if (useFlip()) { buildBook(); } else { buildPager(); }
+    updateModeBtn();
+  }
+
+  function updateModeBtn() {
+    var b = $('modeBtn');
+    b.style.display = (isTwoPage() && window.St) ? '' : 'none';
+    b.textContent = singleMode ? '2 page view' : '1 page view';
+  }
+
+  function buildBook() {
+    applyWrapSize();
+    var els = makePageEls();
+    var size = bookSize();
+    var two = twoPageView();
+    // Single-page view: force StPageFlip portrait mode. With size:'stretch'
+    // it picks portrait only when blockWidth < minWidth*2, so set minWidth
+    // to just over half the block width. Keeps all flip/corner animations.
+    pageFlip = new St.PageFlip($('book'), {
+      width: size.width,
+      height: size.height,
+      size: 'stretch',
+      minWidth: two ? 200 : Math.ceil(size.width / 2) + 2,
+      maxWidth: 2400,
+      minHeight: 120,
+      maxHeight: 1600,
+      usePortrait: !two,
+      showCover: true,
+      maxShadowOpacity: 0.4,
+      flippingTime: 700,
+      mobileScrollSupport: true,
+      swipeDistance: 20
+    });
+    pageFlip.loadFromHTML(els);
+    pageFlip.on('flip', function (e) {
+      curIdx = e.data;
+      updateCounter(e.data + 1);
+      prioritizePages(e.data);
+    });
+    if (curIdx) { try { pageFlip.turnToPage(curIdx); } catch (e) {} }
+    updateCounter((pageFlip.getCurrentPageIndex() || 0) + 1);
+  }
+
+  // Fallback: one full-width page, swipe (or tap edges) to turn. Used only
+  // when the StPageFlip CDN failed to load (pdf.js alone is enough here).
+  function buildPager() {
+    applyWrapSize();
+    var book = $('book');
+    book.style.width = '100%';
+    book.style.height = '100%';
+    book.style.overflow = 'hidden';
+    pageImgs = [];
+    pagerTrack = document.createElement('div');
+    pagerTrack.id = 'track';
+    for (var i = 0; i < totalPages; i++) {
+      var slot = document.createElement('div');
+      slot.className = 'pp';
+      var d = document.createElement('div');
+      d.className = 'page';
+      var img = document.createElement('img');
+      img.alt = 'Page ' + (i + 1);
+      if (pageSrcs[i]) { img.src = pageSrcs[i]; }
+      d.appendChild(img);
+      slot.appendChild(d);
+      pagerTrack.appendChild(slot);
+      pageImgs.push(img);
+    }
+    book.appendChild(pagerTrack);
+    pagerGo(curIdx, false);
+  }
+
+  function pagerGo(idx, animate) {
+    if (!pagerTrack) return;
+    idx = Math.max(0, Math.min(totalPages - 1, idx));
+    curIdx = idx;
+    pagerTrack.style.transition = animate === false ? 'none' : 'transform .3s ease';
+    pagerTrack.style.transform = 'translateX(' + (-idx * 100) + '%)';
+    updateCounter(idx + 1);
+    prioritizePages(idx);
+  }
+
+  // Swipe + tap-edge navigation for the pager (attached once; inert in flip mode).
+  // Bound to #bookWrap, which is never destroyed (#book can be recreated).
+  (function () {
+    var book = $('bookWrap');
+    var sx = 0, sy = 0, dx = 0, dragging = false, horiz = null;
+    book.addEventListener('touchstart', function (e) {
+      if (!pagerTrack || e.touches.length !== 1) return;
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY;
+      dx = 0; dragging = true; horiz = null;
+    }, { passive: true });
+    book.addEventListener('touchmove', function (e) {
+      if (!pagerTrack || !dragging) return;
+      dx = e.touches[0].clientX - sx;
+      var dy = e.touches[0].clientY - sy;
+      if (horiz === null && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+        horiz = Math.abs(dx) > Math.abs(dy);
+        if (horiz) { pagerTrack.style.transition = 'none'; }
+      }
+      if (!horiz) return;
+      if (e.cancelable) e.preventDefault();
+      var atEdge = (curIdx === 0 && dx > 0) || (curIdx === totalPages - 1 && dx < 0);
+      var off = -curIdx * book.clientWidth + (atEdge ? dx / 3 : dx);
+      pagerTrack.style.transform = 'translateX(' + off + 'px)';
+    }, { passive: false });
+    book.addEventListener('touchend', function () {
+      if (!pagerTrack || !dragging) return;
+      dragging = false;
+      if (horiz && Math.abs(dx) > Math.max(40, book.clientWidth * 0.15)) {
+        pagerGo(curIdx + (dx < 0 ? 1 : -1));
+      } else {
+        pagerGo(curIdx);
+      }
+    });
+    book.addEventListener('click', function (e) {
+      if (!pagerTrack || Math.abs(dx) > 10) return;
+      var r = book.getBoundingClientRect();
+      var x = e.clientX - r.left;
+      if (x > r.width * 0.6) { pagerGo(curIdx + 1); }
+      else if (x < r.width * 0.4) { pagerGo(curIdx - 1); }
+    });
+  })();
+
+  function updateCounter(current) {
+    $('counter').textContent = current + ' / ' + totalPages;
+    $('prev').disabled = current <= 1;
+    $('next').disabled = current >= totalPages;
+  }
+  function navPrev() { if (pageFlip) { pageFlip.flipPrev(); } else { pagerGo(curIdx - 1); } }
+  function navNext() { if (pageFlip) { pageFlip.flipNext(); } else { pagerGo(curIdx + 1); } }
+  $('prev').addEventListener('click', navPrev);
+  $('next').addEventListener('click', navNext);
+  // Presentation clickers send a small set of keys — most commonly PageUp /
+  // PageDown, but also arrows, Enter, Backspace and Space depending on brand.
+  // Handle all of them so any remote can flip pages.
+  var PREV_KEYS = { ArrowLeft: 1, ArrowUp: 1, PageUp: 1, Backspace: 1 };
+  var NEXT_KEYS = { ArrowRight: 1, ArrowDown: 1, PageDown: 1, Enter: 1, ' ': 1, Spacebar: 1 };
+  document.addEventListener('keydown', function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (PREV_KEYS[e.key]) { e.preventDefault(); navPrev(); }
+    else if (NEXT_KEYS[e.key]) { e.preventDefault(); navNext(); }
+  });
+  // Keyboard events only reach this document when it actually has focus. Inside
+  // a Tilda iframe that isn't guaranteed, so grab focus on tap and whenever we
+  // enter fullscreen — otherwise the clicker's keys go to the parent page.
+  function grabFocus() { try { window.focus(); } catch (e) {} }
+  $('stage').setAttribute('tabindex', '-1');
+  $('stage').addEventListener('pointerdown', grabFocus);
+  $('modeBtn').addEventListener('click', function () {
+    singleMode = !singleMode;
+    buildViewer();
+  });
+  // iOS often reports stale dimensions right after rotation — re-fire resize
+  // once the new size has settled so the viewer rebuilds correctly.
+  window.addEventListener('orientationchange', function () {
+    setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 300);
+  });
+  $('fsBtn').addEventListener('click', function () {
+    if (document.fullscreenElement) { document.exitFullscreen(); }
+    else { document.documentElement.requestFullscreen().catch(function(){}); }
+  });
+  document.addEventListener('fullscreenchange', function () {
+    grabFocus();
+    setTimeout(function () { window.dispatchEvent(new Event('resize')); }, 100);
+  });
+
+  function debounce(fn, ms) {
+    var t; return function () { clearTimeout(t); t = setTimeout(fn, ms); };
+  }
+})();
+</script>
+</body>
+</html>
